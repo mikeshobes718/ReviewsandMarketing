@@ -36,6 +36,42 @@ jobs:
           EB_BUCKET="elasticbeanstalk-${AWS_REGION}-${ACCOUNT_ID}"
           echo "s3=${EB_BUCKET}" >> $GITHUB_OUTPUT
 
+      - name: Ensure EB IAM roles (service + instance profile)
+        run: |
+          set -euo pipefail
+          # Service role for Elastic Beanstalk
+          if ! aws iam get-role --role-name aws-elasticbeanstalk-service-role >/dev/null 2>&1; then
+            echo "Creating service role aws-elasticbeanstalk-service-role"
+            aws iam create-role \
+              --role-name aws-elasticbeanstalk-service-role \
+              --assume-role-policy-document '{
+                "Version":"2012-10-17",
+                "Statement":[{"Effect":"Allow","Principal":{"Service":"elasticbeanstalk.amazonaws.com"},"Action":"sts:AssumeRole"}]
+              }'
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-service-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-service-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkService
+          fi
+
+          # EC2 instance profile and role for environment instances
+          if ! aws iam get-role --role-name aws-elasticbeanstalk-ec2-role >/dev/null 2>&1; then
+            echo "Creating EC2 role aws-elasticbeanstalk-ec2-role"
+            aws iam create-role \
+              --role-name aws-elasticbeanstalk-ec2-role \
+              --assume-role-policy-document '{
+                "Version":"2012-10-17",
+                "Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]
+              }'
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-ec2-role --policy-arn arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-ec2-role --policy-arn arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-ec2-role --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+          fi
+
+          if ! aws iam get-instance-profile --instance-profile-name aws-elasticbeanstalk-ec2-role >/dev/null 2>&1; then
+            echo "Creating instance profile aws-elasticbeanstalk-ec2-role"
+            aws iam create-instance-profile --instance-profile-name aws-elasticbeanstalk-ec2-role
+            aws iam add-role-to-instance-profile --instance-profile-name aws-elasticbeanstalk-ec2-role --role-name aws-elasticbeanstalk-ec2-role
+          fi
+
       - name: Ensure EB application exists
         run: |
           set -euo pipefail
@@ -117,6 +153,8 @@ jobs:
               --application-name "${{ env.EB_APP_NAME }}" \
               --environment-name "${{ env.EB_ENV_NAME }}" \
               --solution-stack-name "${{ steps.platform.outputs.stack }}" \
+              --role aws-elasticbeanstalk-service-role \
+              --option-settings Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=aws-elasticbeanstalk-ec2-role \
               --version-label "${{ github.sha }}"
           else
             echo "Updating environment $EXISTS"
