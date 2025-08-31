@@ -118,7 +118,6 @@ jobs:
               --environment-name "${{ env.EB_ENV_NAME }}" \
               --solution-stack-name "${{ steps.platform.outputs.stack }}" \
               --version-label "${{ github.sha }}"
-            aws elasticbeanstalk wait environment-exists --environment-names "${{ env.EB_ENV_NAME }}"
           else
             echo "Updating environment $EXISTS"
             aws elasticbeanstalk update-environment \
@@ -136,8 +135,24 @@ jobs:
 
       - name: Wait for EB to be Ready
         run: |
-          aws elasticbeanstalk wait environment-updated \
-            --environment-names "${{ env.EB_ENV_NAME }}"
+          # For new envs or updates, poll until Ready/Green up to ~15m
+          for i in $(seq 1 90); do
+            STATUS=$(aws elasticbeanstalk describe-environments \
+              --application-name "${{ env.EB_APP_NAME }}" \
+              --environment-names "${{ env.EB_ENV_NAME }}" \
+              --query 'Environments[0].Status' --output text || true)
+            HEALTH=$(aws elasticbeanstalk describe-environments \
+              --application-name "${{ env.EB_APP_NAME }}" \
+              --environment-names "${{ env.EB_ENV_NAME }}" \
+              --query 'Environments[0].Health' --output text || true)
+            echo "Attempt $i: Status=$STATUS Health=$HEALTH"
+            if [ "$STATUS" = "Ready" ] && [ "$HEALTH" = "Green" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Environment did not become Ready/Green in time" >&2
+          exit 1
 
       - name: Puppeteer smoke test against LIVE
         run: |
