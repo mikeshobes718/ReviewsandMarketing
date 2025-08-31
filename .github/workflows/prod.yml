@@ -89,18 +89,20 @@ jobs:
             --version-label "${{ github.sha }}" \
             --source-bundle S3Bucket="${{ steps.bucket.outputs.s3 }}",S3Key="${{ steps.s3.outputs.key }}"
 
-      - name: Resolve latest Node.js platform ARN
+      - name: Resolve Node.js (Amazon Linux 2023) Solution Stack
         id: platform
         run: |
           set -euo pipefail
-          ARN=$(aws elasticbeanstalk list-platform-versions \
-            --filters \
-              Type=PlatformName,Operator='=',Values='Node.js' \
-              Type=SupportedTierType,Operator='=',Values='WebServer' \
-              Type=PlatformStatus,Operator='=',Values='Ready' \
-            --query 'reverse(sort_by(PlatformSummaryList, &PlatformVersion))[:1].PlatformArn' \
+          # Prefer AL2023 Node.js solution stacks; fallback to any Node.js
+          STACK=$(aws elasticbeanstalk list-available-solution-stacks \
+            --query 'reverse(SolutionStacks[?contains(@, `Amazon Linux 2023`) && contains(@, `running Node.js`)])[:1]' \
             --output text)
-          echo "arn=$ARN" >> $GITHUB_OUTPUT
+          if [ -z "$STACK" ] || [ "$STACK" = "None" ]; then
+            STACK=$(aws elasticbeanstalk list-available-solution-stacks \
+              --query 'reverse(SolutionStacks[?contains(@, `running Node.js`)])[:1]' \
+              --output text)
+          fi
+          echo "stack=$STACK" >> $GITHUB_OUTPUT
 
       - name: Deploy to EB (update or create)
         run: |
@@ -114,7 +116,7 @@ jobs:
             aws elasticbeanstalk create-environment \
               --application-name "${{ env.EB_APP_NAME }}" \
               --environment-name "${{ env.EB_ENV_NAME }}" \
-              --platform-arn "${{ steps.platform.outputs.arn }}" \
+              --solution-stack-name "${{ steps.platform.outputs.stack }}" \
               --version-label "${{ github.sha }}"
             aws elasticbeanstalk wait environment-exists --environment-names "${{ env.EB_ENV_NAME }}"
           else
