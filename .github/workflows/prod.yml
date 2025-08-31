@@ -1,0 +1,121 @@
+name: PROD Deploy (EB → reviewsandmarketing.com)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EB_APP_NAME: Reviews and Marketing
+  EB_ENV_NAME: reviewsandmarketing-prod
+  S3_BUCKET: reviewpilot-eb-artifacts-us-east-1
+  APP_URL: https://reviewsandmarketing.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Capture current EB version (for rollback)
+        id: prev
+        run: |
+          set -euo pipefail
+          PREV=$(aws elasticbeanstalk describe-environments \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --environment-names "${{ env.EB_ENV_NAME }}" \
+            --query 'Environments[0].VersionLabel' --output text)
+          echo "PREV=$PREV" >> $GITHUB_OUTPUT
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Install & Build (standalone)
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          GIT_SHA=$GITHUB_SHA DEPLOYED_AT=$(date -u +%FT%TZ) npm run build
+          rm -rf bundle && mkdir -p bundle
+          cp -R .next/standalone bundle/
+          cp -R .next/static bundle/.next/static
+          cp -R public bundle/public || true
+          echo 'web: node .next/standalone/server.js' > bundle/Procfile
+          cat > bundle/package.json <<'JSON'
+          { "name": "ram-runtime", "private": true, "scripts": { "start": "node .next/standalone/server.js" } }
+          JSON
+          (cd bundle && zip -r ../artifact.zip .)
+
+      - name: Configure AWS creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Upload artifact → S3
+        id: s3
+        run: |
+          set -euo pipefail
+          KEY="ram/${GITHUB_SHA}.zip"
+          aws s3 cp artifact.zip "s3://${{ env.S3_BUCKET }}/${KEY}"
+          echo "key=$KEY" >> $GITHUB_OUTPUT
+
+      - name: Create EB App Version
+        run: |
+          aws elasticbeanstalk create-application-version \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --version-label "${{ github.sha }}" \
+            --source-bundle S3Bucket="${{ env.S3_BUCKET }}",S3Key="${{ steps.s3.outputs.key }}"
+
+      - name: Deploy to EB
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ env.EB_ENV_NAME }}" \
+            --version-label "${{ github.sha }}"
+
+      - name: Stamp build metadata in EB env
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ env.EB_ENV_NAME }}" \
+            --option-settings \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=GIT_SHA,Value="${GITHUB_SHA}" \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEPLOYED_AT,Value="$(date -u +%FT%TZ)"
+
+      - name: Wait for EB to be Ready
+        run: |
+          aws elasticbeanstalk wait environment-updated \
+            --environment-names "${{ env.EB_ENV_NAME }}"
+
+      - name: Smoke check against LIVE domain (health + /api/health)
+        id: smoke
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            code=$(curl -ks -o /dev/null -w "%{http_code}" "${{ env.APP_URL }}/")
+            health=$(curl -ks "${{ env.APP_URL }}/api/health" || true)
+            echo "Attempt $i: / => $code, /api/health => $health"
+            if [ "$code" = "200" ] && echo "$health" | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Smoke check failed" >&2
+          exit 1
+
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          echo "Rolling back to ${{ steps.prev.outputs.PREV }}"
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ env.EB_ENV_NAME }}" \
+            --version-label "${{ steps.prev.outputs.PREV }}"
+          aws elasticbeanstalk wait environment-updated \
+            --environment-names "${{ env.EB_ENV_NAME }}"
+
+
