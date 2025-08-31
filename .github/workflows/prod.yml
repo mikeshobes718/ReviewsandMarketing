@@ -153,8 +153,9 @@ jobs:
               --application-name "${{ env.EB_APP_NAME }}" \
               --environment-name "${{ env.EB_ENV_NAME }}" \
               --solution-stack-name "${{ steps.platform.outputs.stack }}" \
-              --role aws-elasticbeanstalk-service-role \
-              --option-settings Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=aws-elasticbeanstalk-ec2-role \
+              --option-settings \
+                Namespace=aws:elasticbeanstalk:environment,OptionName=ServiceRole,Value=aws-elasticbeanstalk-service-role \
+                Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=aws-elasticbeanstalk-ec2-role \
               --version-label "${{ github.sha }}"
           else
             echo "Updating environment $EXISTS"
@@ -172,6 +173,9 @@ jobs:
                   --application-name "${{ env.EB_APP_NAME }}" \
                   --environment-name "${{ env.EB_ENV_NAME }}" \
                   --solution-stack-name "${{ steps.platform.outputs.stack }}" \
+                  --option-settings \
+                    Namespace=aws:elasticbeanstalk:environment,OptionName=ServiceRole,Value=aws-elasticbeanstalk-service-role \
+                    Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=aws-elasticbeanstalk-ec2-role \
                   --version-label "${{ github.sha }}"
               else
                 exit $RC
