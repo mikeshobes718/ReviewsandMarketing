@@ -35,6 +35,19 @@ jobs:
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           EB_BUCKET="elasticbeanstalk-${AWS_REGION}-${ACCOUNT_ID}"
           echo "s3=${EB_BUCKET}" >> $GITHUB_OUTPUT
+
+      - name: Ensure EB application exists
+        run: |
+          set -euo pipefail
+          APP_EXISTS=$(aws elasticbeanstalk describe-applications \
+            --application-names "${{ env.EB_APP_NAME }}" \
+            --query 'Applications[0].ApplicationName' --output text || true)
+          if [ "$APP_EXISTS" = "None" ] || [ -z "$APP_EXISTS" ]; then
+            echo "Creating EB application ${{ env.EB_APP_NAME }}"
+            aws elasticbeanstalk create-application --application-name "${{ env.EB_APP_NAME }}"
+          else
+            echo "EB application exists: $APP_EXISTS"
+          fi
       - name: Capture current EB version (for rollback)
         id: prev
         run: |
@@ -76,11 +89,37 @@ jobs:
             --version-label "${{ github.sha }}" \
             --source-bundle S3Bucket="${{ steps.bucket.outputs.s3 }}",S3Key="${{ steps.s3.outputs.key }}"
 
-      - name: Deploy to EB
+      - name: Resolve latest Node.js platform ARN
+        id: platform
         run: |
-          aws elasticbeanstalk update-environment \
-            --environment-name "${{ env.EB_ENV_NAME }}" \
-            --version-label "${{ github.sha }}"
+          set -euo pipefail
+          ARN=$(aws elasticbeanstalk list-platform-versions \
+            --filters Name=PlatformName,Values=Node.js Name=TierType,Values=WebServer \
+            --query 'reverse(sort_by(PlatformSummaryList[?Status==`Ready`], &PlatformVersion))[0].PlatformArn' \
+            --output text)
+          echo "arn=$ARN" >> $GITHUB_OUTPUT
+
+      - name: Deploy to EB (update or create)
+        run: |
+          set -euo pipefail
+          EXISTS=$(aws elasticbeanstalk describe-environments \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --environment-names "${{ env.EB_ENV_NAME }}" \
+            --query 'Environments[0].EnvironmentName' --output text || true)
+          if [ "$EXISTS" = "None" ] || [ -z "$EXISTS" ]; then
+            echo "Creating environment ${{ env.EB_ENV_NAME }}"
+            aws elasticbeanstalk create-environment \
+              --application-name "${{ env.EB_APP_NAME }}" \
+              --environment-name "${{ env.EB_ENV_NAME }}" \
+              --platform-arn "${{ steps.platform.outputs.arn }}" \
+              --version-label "${{ github.sha }}"
+            aws elasticbeanstalk wait environment-exists --environment-names "${{ env.EB_ENV_NAME }}"
+          else
+            echo "Updating environment $EXISTS"
+            aws elasticbeanstalk update-environment \
+              --environment-name "${{ env.EB_ENV_NAME }}" \
+              --version-label "${{ github.sha }}"
+          fi
 
       - name: Stamp build metadata in EB env
         run: |
