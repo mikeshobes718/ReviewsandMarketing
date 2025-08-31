@@ -95,8 +95,8 @@ jobs:
           set -euo pipefail
           ARN=$(aws elasticbeanstalk list-platform-versions \
             --filters Name=PlatformName,Values=Node.js Name=TierType,Values=WebServer \
-            --query 'reverse(sort_by(PlatformSummaryList[?Status==`Ready`], &PlatformVersion))[0].PlatformArn' \
-            --output text)
+            --query 'sort_by(PlatformSummaryList[?Status==`Ready`], &PlatformVersion)[].PlatformArn' \
+            --output text | tail -n 1)
           echo "arn=$ARN" >> $GITHUB_OUTPUT
 
       - name: Deploy to EB (update or create)
