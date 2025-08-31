@@ -46,11 +46,7 @@ jobs:
           rm -rf bundle && mkdir -p bundle
           cp -R .next/standalone bundle/
           cp -R .next/static bundle/.next/static
-<<<<<<< HEAD
           cp -R public bundle/public
-=======
-          cp -R public bundle/public
->>>>>>> origin/main
           echo 'web: node .next/standalone/server.js' > bundle/Procfile
           cat > bundle/package.json <<'JSON'
           { "name": "ram-runtime", "private": true, "scripts": { "start": "node .next/standalone/server.js" } }
