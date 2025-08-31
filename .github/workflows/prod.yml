@@ -95,9 +95,10 @@ jobs:
           set -euo pipefail
           ARN=$(aws elasticbeanstalk list-platform-versions \
             --filters \
-              Type=PlatformName,Operator='=',Values='Node.js running on 64bit Amazon Linux 2023' \
-              Type=TierType,Operator='=',Values=WebServer \
-            --query 'reverse(sort_by(PlatformSummaryList[?Status==`Ready`], &PlatformVersion))[:1].PlatformArn' \
+              Type=PlatformName,Operator='=',Values='Node.js' \
+              Type=SupportedTierType,Operator='=',Values='WebServer' \
+              Type=PlatformStatus,Operator='=',Values='Ready' \
+            --query 'reverse(sort_by(PlatformSummaryList, &PlatformVersion))[:1].PlatformArn' \
             --output text)
           echo "arn=$ARN" >> $GITHUB_OUTPUT
 
