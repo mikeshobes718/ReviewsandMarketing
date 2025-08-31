@@ -43,8 +43,8 @@ jobs:
           set -euo pipefail
           npm ci --no-audit --no-fund
           GIT_SHA=$GITHUB_SHA DEPLOYED_AT=$(date -u +%FT%TZ) npm run build
-          rm -rf bundle && mkdir -p bundle
-          cp -R .next/standalone bundle/
+          rm -rf bundle && mkdir -p bundle/.next
+          cp -R .next/standalone bundle/.next/
           cp -R .next/static bundle/.next/static
           cp -R public bundle/public
           echo 'web: node .next/standalone/server.js' > bundle/Procfile
@@ -96,7 +96,7 @@ jobs:
           APP_URL: https://reviewsandmarketing.com
 
       - name: Roll back on failure
-        if: failure() && steps.prev.outputs.PREV != ''
+        if: failure() && steps.prev.outputs.PREV != '' && steps.prev.outputs.PREV != 'None'
         run: |
           echo "Rolling back to ${{ steps.prev.outputs.PREV }}"
           aws elasticbeanstalk update-environment \
