@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server';
-import { postmark } from '@/lib/postmark';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { makeGoogleReviewLink } from '@/lib/googlePlaces';
-import { ENV } from '@/lib/env';
+import { getPostmarkClient } from '@/lib/postmark';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { makeGoogleReviewLinkFromWriteUri } from '@/lib/googlePlaces';
+import { getEnv } from '@/lib/env';
 
 export async function POST(req: Request) {
-  const { businessId, placeId, toEmail, customerName } = await req.json();
+  const { businessId, placeId, toEmail, customerName, reviewLink } = await req.json();
+  const postmark = getPostmarkClient();
+  const supabaseAdmin = getSupabaseAdmin();
+  const { EMAIL_FROM } = getEnv();
 
-  const link = makeGoogleReviewLink(placeId);
+  const link = reviewLink || makeGoogleReviewLinkFromWriteUri(undefined, placeId);
   const result = await postmark.sendEmail({
-    From: ENV.EMAIL_FROM,
+    From: EMAIL_FROM,
     To: toEmail,
     Subject: 'Quick review request',
     HtmlBody: `<p>Hi ${customerName || ''},</p><p>Please leave a quick review: <a href="${link}">Google review</a>.</p>`,

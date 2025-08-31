@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAuthAdmin } from '@/lib/firebaseAdmin';
 
 export const runtime = 'nodejs';
@@ -24,6 +24,7 @@ export async function POST(req: Request) {
 
   const body = await req.json();
 
+  const supabaseAdmin = getSupabaseAdmin();
   const { error } = await supabaseAdmin.from('businesses').upsert({
     owner_uid: uid,
     name: body.name,

@@ -1,4 +1,10 @@
 import { ServerClient } from 'postmark';
-import { ENV } from './env';
+import { getEnv } from './env';
 
-export const postmark = new ServerClient(ENV.POSTMARK_SERVER_TOKEN);
+let _postmark: ServerClient | null = null;
+export function getPostmarkClient(): ServerClient {
+  if (_postmark) return _postmark;
+  const { POSTMARK_SERVER_TOKEN } = getEnv();
+  _postmark = new ServerClient(POSTMARK_SERVER_TOKEN);
+  return _postmark;
+}

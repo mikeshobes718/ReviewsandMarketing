@@ -1,27 +1,30 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { stripe } from '@/lib/stripe';
-import { ENV } from '@/lib/env';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getStripeClient } from '@/lib/stripe';
+import { getEnv } from '@/lib/env';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import type Stripe from 'stripe';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  const hdrs = await headers();
-  const sig = hdrs.get('stripe-signature') || '';
+  const sig = (await headers()).get('stripe-signature') || '';
   const raw = await req.text();
+
+  const stripe = getStripeClient();
+  const { STRIPE_WEBHOOK_SECRET } = getEnv();
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(raw, sig, ENV.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(raw, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return new NextResponse(`Webhook Error: ${message}`, { status: 400 });
   }
 
   const id = event.id as string;
+  const supabaseAdmin = getSupabaseAdmin();
   const { data: existing } = await supabaseAdmin
     .from('webhook_events').select('id').eq('id', id).maybeSingle();
   if (existing) return NextResponse.json({ ok: true, duplicate: true });

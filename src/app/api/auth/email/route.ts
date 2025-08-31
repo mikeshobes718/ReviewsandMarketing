@@ -1,21 +1,20 @@
 import { NextResponse } from 'next/server';
 import { getAuthAdmin } from '@/lib/firebaseAdmin';
-import { postmark } from '@/lib/postmark';
-import { ENV } from '@/lib/env';
+import { getPostmarkClient } from '@/lib/postmark';
+import { getEnv } from '@/lib/env';
 
 export async function POST(req: Request) {
   const { email, type } = await req.json();
-  let link: string;
-
+  const { EMAIL_FROM, APP_URL } = getEnv();
   const auth = getAuthAdmin();
-  if (type === 'verify') {
-    link = await auth.generateEmailVerificationLink(email, { url: `${ENV.APP_URL}/login` });
-  } else {
-    link = await auth.generatePasswordResetLink(email, { url: `${ENV.APP_URL}/login` });
-  }
+  const postmark = getPostmarkClient();
+  const link =
+    type === 'verify'
+      ? await auth.generateEmailVerificationLink(email, { url: `${APP_URL}/login` })
+      : await auth.generatePasswordResetLink(email, { url: `${APP_URL}/login` });
 
   const r = await postmark.sendEmail({
-    From: ENV.EMAIL_FROM,
+    From: EMAIL_FROM,
     To: email,
     Subject: type === 'verify' ? 'Verify your email' : 'Reset your password',
     TextBody: `Click the link: ${link}`,

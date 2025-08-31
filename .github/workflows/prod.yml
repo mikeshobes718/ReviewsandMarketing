@@ -22,19 +22,18 @@ jobs:
         with:
           node-version: 22
 
+      - name: Configure AWS creds early (for rollback safety)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
       - name: Capture current EB version (for rollback)
         id: prev
         run: |
           set -euo pipefail
-          PREV=$(aws elasticbeanstalk describe-environments \
-            --application-name "${{ env.EB_APP_NAME }}" \
-            --environment-names "${{ env.EB_ENV_NAME }}" \
-            --query 'Environments[0].VersionLabel' --output text)
+            --query 'Environments[0].VersionLabel' --output text || true)
           echo "PREV=$PREV" >> $GITHUB_OUTPUT
-        env:
-          AWS_REGION: ${{ env.AWS_REGION }}
-          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Install & Build (standalone)
         run: |
@@ -44,20 +43,18 @@ jobs:
           rm -rf bundle && mkdir -p bundle
           cp -R .next/standalone bundle/
           cp -R .next/static bundle/.next/static
-          cp -R public bundle/public || true
+<<<<<<< HEAD
+          cp -R public bundle/public
+=======
+          cp -R public bundle/public
+>>>>>>> origin/main
           echo 'web: node .next/standalone/server.js' > bundle/Procfile
           cat > bundle/package.json <<'JSON'
           { "name": "ram-runtime", "private": true, "scripts": { "start": "node .next/standalone/server.js" } }
           JSON
           (cd bundle && zip -r ../artifact.zip .)
 
-      - name: Configure AWS creds
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
+      
       - name: Upload artifact → S3
         id: s3
         run: |
@@ -92,24 +89,15 @@ jobs:
           aws elasticbeanstalk wait environment-updated \
             --environment-names "${{ env.EB_ENV_NAME }}"
 
-      - name: Smoke check against LIVE domain (health + /api/health)
-        id: smoke
+      - name: Puppeteer smoke test against LIVE
         run: |
-          set -euo pipefail
-          for i in {1..30}; do
-            code=$(curl -ks -o /dev/null -w "%{http_code}" "${{ env.APP_URL }}/")
-            health=$(curl -ks "${{ env.APP_URL }}/api/health" || true)
-            echo "Attempt $i: / => $code, /api/health => $health"
-            if [ "$code" = "200" ] && echo "$health" | grep -q '"status":"ok"'; then
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "Smoke check failed" >&2
-          exit 1
+          npm i --no-audit --no-fund puppeteer@23
+          node scripts/smoke.puppeteer.mjs
+        env:
+          APP_URL: https://reviewsandmarketing.com
 
       - name: Roll back on failure
-        if: failure()
+        if: failure() && steps.prev.outputs.PREV != ''
         run: |
           echo "Rolling back to ${{ steps.prev.outputs.PREV }}"
           aws elasticbeanstalk update-environment \

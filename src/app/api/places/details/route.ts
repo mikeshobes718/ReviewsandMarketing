@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getPlaceDetails } from '@/lib/googlePlaces';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,33 +10,7 @@ export async function GET(req: Request) {
   const sessionToken = searchParams.get('sessionToken') || undefined;
 
   if (!placeId) return new NextResponse('Missing placeId', { status: 400 });
-
-  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
-  const res = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': process.env.GOOGLE_MAPS_API_KEY!,
-      'X-Goog-FieldMask': [
-        'id',
-        'displayName',
-        'formattedAddress',
-        'rating',
-        'userRatingCount',
-        'googleMapsUri',
-        'googleMapsLinks.placeUri',
-        'googleMapsLinks.writeAReviewUri',
-        'googleMapsLinks.reviewsUri',
-      ].join(','),
-      ...(sessionToken ? { 'X-Goog-Session-Token': sessionToken } : {}),
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    return new NextResponse(`Details error: ${res.status} ${text}`, { status: 500 });
-  }
-
-  const p = (await res.json()) as {
+  const p = await getPlaceDetails(placeId, sessionToken) as {
     id: string;
     displayName?: { text?: string };
     formattedAddress?: string;
