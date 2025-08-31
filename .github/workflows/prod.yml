@@ -140,6 +140,16 @@ jobs:
           fi
           echo "stack=$STACK" >> $GITHUB_OUTPUT
 
+      - name: Resolve EB environment CNAME
+        id: ebcname
+        run: |
+          set -euo pipefail
+          CNAME=$(aws elasticbeanstalk describe-environments \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --environment-names "${{ env.EB_ENV_NAME }}" \
+            --query 'Environments[0].CNAME' --output text || true)
+          echo "cname=$CNAME" >> $GITHUB_OUTPUT
+
       - name: Deploy to EB (update or create)
         run: |
           set -euo pipefail
@@ -218,6 +228,7 @@ jobs:
           node scripts/smoke.puppeteer.mjs
         env:
           APP_URL: https://reviewsandmarketing.com
+          FALLBACK_URL: ${{ steps.ebcname.outputs.cname }}
 
       - name: Roll back on failure
         if: failure() && steps.prev.outputs.PREV != '' && steps.prev.outputs.PREV != 'None'
