@@ -141,18 +141,10 @@ jobs:
             fi
           fi
 
-      - name: Stamp build metadata in EB env
-        run: |
-          aws elasticbeanstalk update-environment \
-            --environment-name "${{ env.EB_ENV_NAME }}" \
-            --option-settings \
-              Namespace=aws:elasticbeanstalk:application:environment,OptionName=GIT_SHA,Value="${GITHUB_SHA}" \
-              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEPLOYED_AT,Value="$(date -u +%FT%TZ)"
-
       - name: Wait for EB to be Ready
         run: |
-          # For new envs or updates, poll until Ready/Green up to ~15m
-          for i in $(seq 1 90); do
+          # For new envs or updates, poll until Ready/Green up to ~20m
+          for i in $(seq 1 120); do
             STATUS=$(aws elasticbeanstalk describe-environments \
               --application-name "${{ env.EB_APP_NAME }}" \
               --environment-names "${{ env.EB_ENV_NAME }}" \
@@ -169,6 +161,14 @@ jobs:
           done
           echo "Environment did not become Ready/Green in time" >&2
           exit 1
+
+      - name: Stamp build metadata in EB env
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ env.EB_ENV_NAME }}" \
+            --option-settings \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=GIT_SHA,Value="${GITHUB_SHA}" \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEPLOYED_AT,Value="$(date -u +%FT%TZ)"
 
       - name: Puppeteer smoke test against LIVE
         run: |
