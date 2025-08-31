@@ -9,7 +9,6 @@ env:
   AWS_REGION: us-east-1
   EB_APP_NAME: Reviews and Marketing
   EB_ENV_NAME: reviewsandmarketing-prod
-  S3_BUCKET: reviewpilot-eb-artifacts-us-east-1
   APP_URL: https://reviewsandmarketing.com
 
 jobs:
@@ -28,6 +27,14 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Resolve EB S3 bucket
+        id: bucket
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          EB_BUCKET="elasticbeanstalk-${AWS_REGION}-${ACCOUNT_ID}"
+          echo "s3=${EB_BUCKET}" >> $GITHUB_OUTPUT
       - name: Capture current EB version (for rollback)
         id: prev
         run: |
@@ -59,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           KEY="ram/${GITHUB_SHA}.zip"
-          aws s3 cp artifact.zip "s3://${{ env.S3_BUCKET }}/${KEY}"
+          aws s3 cp artifact.zip "s3://${{ steps.bucket.outputs.s3 }}/${KEY}"
           echo "key=$KEY" >> $GITHUB_OUTPUT
 
       - name: Create EB App Version
@@ -67,7 +74,7 @@ jobs:
           aws elasticbeanstalk create-application-version \
             --application-name "${{ env.EB_APP_NAME }}" \
             --version-label "${{ github.sha }}" \
-            --source-bundle S3Bucket="${{ env.S3_BUCKET }}",S3Key="${{ steps.s3.outputs.key }}"
+            --source-bundle S3Bucket="${{ steps.bucket.outputs.s3 }}",S3Key="${{ steps.s3.outputs.key }}"
 
       - name: Deploy to EB
         run: |
