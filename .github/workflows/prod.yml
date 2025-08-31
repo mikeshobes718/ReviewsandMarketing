@@ -32,6 +32,9 @@ jobs:
         id: prev
         run: |
           set -euo pipefail
+          PREV=$(aws elasticbeanstalk describe-environments \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --environment-names "${{ env.EB_ENV_NAME }}" \
             --query 'Environments[0].VersionLabel' --output text || true)
           echo "PREV=$PREV" >> $GITHUB_OUTPUT
 
