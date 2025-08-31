@@ -120,9 +120,25 @@ jobs:
               --version-label "${{ github.sha }}"
           else
             echo "Updating environment $EXISTS"
-            aws elasticbeanstalk update-environment \
+            set +e
+            OUT=$(aws elasticbeanstalk update-environment \
               --environment-name "${{ env.EB_ENV_NAME }}" \
-              --version-label "${{ github.sha }}"
+              --version-label "${{ github.sha }}" 2>&1)
+            RC=$?
+            set -e
+            if [ $RC -ne 0 ]; then
+              echo "$OUT"
+              if echo "$OUT" | grep -q "No Environment found"; then
+                echo "Falling back to create-environment for ${{ env.EB_ENV_NAME }}"
+                aws elasticbeanstalk create-environment \
+                  --application-name "${{ env.EB_APP_NAME }}" \
+                  --environment-name "${{ env.EB_ENV_NAME }}" \
+                  --solution-stack-name "${{ steps.platform.outputs.stack }}" \
+                  --version-label "${{ github.sha }}"
+              else
+                exit $RC
+              fi
+            fi
           fi
 
       - name: Stamp build metadata in EB env
