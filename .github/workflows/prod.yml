@@ -94,9 +94,11 @@ jobs:
         run: |
           set -euo pipefail
           ARN=$(aws elasticbeanstalk list-platform-versions \
-            --filters Name=PlatformName,Values=Node.js Name=TierType,Values=WebServer \
-            --query 'sort_by(PlatformSummaryList[?Status==`Ready`], &PlatformVersion)[].PlatformArn' \
-            --output text | tail -n 1)
+            --filters \
+              Type=PlatformName,Operator='=',Values='Node.js running on 64bit Amazon Linux 2023' \
+              Type=TierType,Operator='=',Values=WebServer \
+            --query 'reverse(sort_by(PlatformSummaryList[?Status==`Ready`], &PlatformVersion))[:1].PlatformArn' \
+            --output text)
           echo "arn=$ARN" >> $GITHUB_OUTPUT
 
       - name: Deploy to EB (update or create)
