@@ -103,25 +103,26 @@ export default function ConnectBusiness() {
   const qrSvg = useMemo(() => (reviewUrl ? `/api/qr?data=${encodeURIComponent(reviewUrl)}&format=svg&scale=8` : null), [reviewUrl]);
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Connect your business</h1>
-      <p className="text-gray-600">Search your business by name, then confirm the address.</p>
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 py-10">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <h1 className="text-3xl md:text-4xl font-bold text-gray-900">Connect your business</h1>
+        <p className="text-gray-600">Search your business by name, then confirm the address.</p>
 
-      <div className="relative">
+        <div className="relative">
         <input
-          className="w-full border rounded-md px-4 py-2"
+          className="w-full rounded-xl border border-gray-200 px-4 py-3 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="Start typing your business name…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
-        {loading && <div className="absolute right-3 top-2.5 text-sm text-gray-500">Searching…</div>}
+        {loading && <div className="absolute right-3 top-3 text-sm text-gray-500">Searching…</div>}
         {Boolean(suggestions.length) && (
-          <div className="mt-2 border rounded-md bg-white shadow-md">
+          <div className="mt-2 rounded-xl border border-gray-200 bg-white shadow-md">
             <ul className="max-h-72 overflow-auto">
               {suggestions.map((s) => (
                 <li
                   key={s.placeId}
-                  className="px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                  className="px-4 py-3 hover:bg-gray-50 cursor-pointer"
                   onClick={() => select(s.placeId)}
                 >
                   <div className="font-medium">{s.mainText}</div>
@@ -134,10 +135,10 @@ export default function ConnectBusiness() {
             </div>
           </div>
         )}
-      </div>
+        </div>
 
-      {selected && (
-        <div className="border rounded-md p-4 space-y-3">
+        {selected && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm space-y-3">
           <div className="text-lg font-semibold">{selected.displayName}</div>
           <div className="text-gray-700">{selected.formattedAddress}</div>
           <div className="text-gray-700">
@@ -147,15 +148,15 @@ export default function ConnectBusiness() {
           {reviewUrl && (
             <div className="space-y-2">
               <div className="flex gap-2">
-                <input className="w-full border rounded px-2 py-1" readOnly value={reviewUrl} />
+                <input className="w-full rounded-xl border border-gray-200 px-3 py-2 focus:outline-none" readOnly value={reviewUrl} />
                 <button
-                  className="px-3 py-1 rounded bg-blue-600 text-white"
+                  className="rounded-xl px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium hover:from-blue-700 hover:to-purple-700 transition"
                   onClick={() => navigator.clipboard.writeText(reviewUrl as string)}
                 >
-                  Copy link
+                  Copy
                 </button>
-                <a className="px-3 py-1 rounded border" target="_blank" href={reviewUrl} rel="noreferrer">
-                  Test link
+                <a className="rounded-xl px-4 py-2 border border-gray-200 hover:bg-gray-50 transition" target="_blank" href={reviewUrl} rel="noreferrer">
+                  Test
                 </a>
               </div>
 
@@ -172,7 +173,7 @@ export default function ConnectBusiness() {
           <div className="pt-2">
             <button
               disabled={saving}
-              className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
+              className="rounded-xl px-5 py-3 bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition"
               onClick={saveBusiness}
             >
               {saving ? 'Saving…' : 'Save business'}
@@ -181,8 +182,9 @@ export default function ConnectBusiness() {
         </div>
       )}
 
-      {error && <div className="text-red-600 text-sm">{error}</div>}
-    </div>
+        {error && <div className="text-red-600 text-sm">{error}</div>}
+      </div>
+    </main>
   );
 }
 

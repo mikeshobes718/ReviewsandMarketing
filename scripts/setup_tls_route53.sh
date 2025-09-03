@@ -9,42 +9,47 @@ WWW_DOMAIN=${WWW_DOMAIN:-www.reviewsandmarketing.com}
 
 echo "Region: $AWS_REGION"
 
-CERT_ARN=$(aws acm request-certificate \
-  --region "$AWS_REGION" \
-  --domain-name "$ROOT_DOMAIN" \
-  --subject-alternative-names "$WWW_DOMAIN" \
-  --validation-method DNS \
-  --idempotency-token ram-acm-001 \
-  --options CertificateTransparencyLoggingPreference=ENABLED \
-  --query CertificateArn --output text || true)
+# Request or find existing certificate
+CERT_ARN=$(aws acm list-certificates --region "$AWS_REGION" \
+  --query "CertificateSummaryList[?DomainName=='$ROOT_DOMAIN'].CertificateArn | [0]" --output text || true)
+if [[ -z "$CERT_ARN" || "$CERT_ARN" == "None" ]]; then
+  CERT_ARN=$(aws acm request-certificate \
+    --region "$AWS_REGION" \
+    --domain-name "$ROOT_DOMAIN" \
+    --subject-alternative-names "$WWW_DOMAIN" \
+    --validation-method DNS \
+    --idempotency-token ram_acm_001 \
+    --options CertificateTransparencyLoggingPreference=ENABLED \
+    --query CertificateArn --output text)
+fi
 echo "CERT_ARN=$CERT_ARN"
 
 HZ_ID=$(aws route53 list-hosted-zones-by-name --dns-name "$ROOT_DOMAIN" --query 'HostedZones[0].Id' --output text || true)
 if [[ "$HZ_ID" != "None" && -n "$HZ_ID" ]]; then
   aws acm describe-certificate --certificate-arn "$CERT_ARN" --region "$AWS_REGION" \
-   | jq -r '.Certificate.DomainValidationOptions[].ResourceRecord' > /tmp/dv.json
-
-  cat >/tmp/rr.json <<JSON
+   | jq -c '.Certificate.DomainValidationOptions[] | select(.ValidationMethod=="DNS") | .ResourceRecord' \
+   | while read -r rr; do
+       NAME=$(echo "$rr" | jq -r '.Name')
+       TYPE=$(echo "$rr" | jq -r '.Type')
+       VALUE=$(echo "$rr" | jq -r '.Value')
+       cat > /tmp/one.json <<JSON
 {
-  "Comment": "ACM validation for $ROOT_DOMAIN",
+  "Comment": "ACM validation record",
   "Changes": [
-    $(jq -r '
-      to_entries | map(
-        {
-          "Action":"UPSERT",
-          "ResourceRecordSet":{
-            "Name": .value.Name,
-            "Type": .value.Type,
-            "TTL": 300,
-            "ResourceRecords":[{"Value": .value.Value}]
-          }
-        }
-      ) | join(",")
-    ' /tmp/dv.json)
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "$NAME",
+        "Type": "$TYPE",
+        "TTL": 300,
+        "ResourceRecords": [{"Value": "$VALUE"}]
+      }
+    }
   ]
 }
 JSON
-  aws route53 change-resource-record-sets --hosted-zone-id "$HZ_ID" --change-batch file:///tmp/rr.json
+       aws route53 change-resource-record-sets --hosted-zone-id "$HZ_ID" --change-batch file:///tmp/one.json
+     done
 fi
 
 LB_NAME=$(aws elasticbeanstalk describe-environment-resources --environment-name "$EB_ENV_NAME" \

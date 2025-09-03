@@ -56,4 +56,12 @@ main().catch((err) => {
   process.exit(1);
 });
 
+// Additional API sanity check (non-blocking)
+try {
+  const res = await fetch(`${process.env.APP_URL}/api/analytics/links/timeseries?days=7`);
+  console.log('Timeseries status:', res.status);
+} catch (e) {
+  console.warn('Timeseries check skipped:', (e && e.message) || e);
+}
+
 
