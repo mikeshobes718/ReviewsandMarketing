@@ -328,8 +328,8 @@ export default function Pricing() {
                 Yes! We offer a 14-day free trial on all plans. No credit card required to start. 
                 You can explore all features and decide if Reviews & Marketing is right for your business.
               </p>
-            </div>
-            
+        </div>
+
             <div className="bg-white rounded-2xl p-8 shadow-sm">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">
                 What payment methods do you accept?
