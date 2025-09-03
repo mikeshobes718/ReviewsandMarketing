@@ -1,0 +1,33 @@
+node_modules
+.vercel
+
+# Next.js build output
+.next
+out
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS / editor noise
+.DS_Store
+.idea
+.vscode/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts / archives
+*.zip
+*.tar.gz
+*.tgz
+*.bak
+
+# Local deploy scratch
+direct-deploy/
+simple-deploy/
+.last_bundle_name
+".next 2/"

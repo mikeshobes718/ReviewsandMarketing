@@ -1,0 +1,243 @@
+name: PROD Deploy (EB → reviewsandmarketing.com)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EB_APP_NAME: Reviews and Marketing
+  EB_ENV_NAME: reviewsandmarketing-prod
+  APP_URL: https://reviewsandmarketing.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configure AWS creds early (for rollback safety)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Resolve EB S3 bucket
+        id: bucket
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          EB_BUCKET="elasticbeanstalk-${AWS_REGION}-${ACCOUNT_ID}"
+          echo "s3=${EB_BUCKET}" >> $GITHUB_OUTPUT
+
+      - name: Ensure EB IAM roles (service + instance profile)
+        run: |
+          set -euo pipefail
+          # Service role for Elastic Beanstalk
+          if ! aws iam get-role --role-name aws-elasticbeanstalk-service-role >/dev/null 2>&1; then
+            echo "Creating service role aws-elasticbeanstalk-service-role"
+            aws iam create-role \
+              --role-name aws-elasticbeanstalk-service-role \
+              --assume-role-policy-document '{
+                "Version":"2012-10-17",
+                "Statement":[{"Effect":"Allow","Principal":{"Service":"elasticbeanstalk.amazonaws.com"},"Action":"sts:AssumeRole"}]
+              }'
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-service-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkEnhancedHealth
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-service-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkService
+          fi
+
+          # EC2 instance profile and role for environment instances
+          if ! aws iam get-role --role-name aws-elasticbeanstalk-ec2-role >/dev/null 2>&1; then
+            echo "Creating EC2 role aws-elasticbeanstalk-ec2-role"
+            aws iam create-role \
+              --role-name aws-elasticbeanstalk-ec2-role \
+              --assume-role-policy-document '{
+                "Version":"2012-10-17",
+                "Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]
+              }'
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-ec2-role --policy-arn arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-ec2-role --policy-arn arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier
+            aws iam attach-role-policy --role-name aws-elasticbeanstalk-ec2-role --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+          fi
+
+          if ! aws iam get-instance-profile --instance-profile-name aws-elasticbeanstalk-ec2-role >/dev/null 2>&1; then
+            echo "Creating instance profile aws-elasticbeanstalk-ec2-role"
+            aws iam create-instance-profile --instance-profile-name aws-elasticbeanstalk-ec2-role
+            aws iam add-role-to-instance-profile --instance-profile-name aws-elasticbeanstalk-ec2-role --role-name aws-elasticbeanstalk-ec2-role
+          fi
+
+      - name: Ensure EB application exists
+        run: |
+          set -euo pipefail
+          APP_EXISTS=$(aws elasticbeanstalk describe-applications \
+            --application-names "${{ env.EB_APP_NAME }}" \
+            --query 'Applications[0].ApplicationName' --output text || true)
+          if [ "$APP_EXISTS" = "None" ] || [ -z "$APP_EXISTS" ]; then
+            echo "Creating EB application ${{ env.EB_APP_NAME }}"
+            aws elasticbeanstalk create-application --application-name "${{ env.EB_APP_NAME }}"
+          else
+            echo "EB application exists: $APP_EXISTS"
+          fi
+      - name: Capture current EB version (for rollback)
+        id: prev
+        run: |
+          set -euo pipefail
+          PREV=$(aws elasticbeanstalk describe-environments \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --environment-names "${{ env.EB_ENV_NAME }}" \
+            --query 'Environments[0].VersionLabel' --output text || true)
+          echo "PREV=$PREV" >> $GITHUB_OUTPUT
+
+      - name: Install & Build (standalone)
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          GIT_SHA=$GITHUB_SHA DEPLOYED_AT=$(date -u +%FT%TZ) npm run build
+          rm -rf bundle && mkdir -p bundle/.next
+          cp -R .next/standalone bundle/.next/
+          cp -R .next/static bundle/.next/static
+          cp -R public bundle/public
+          echo 'web: node .next/standalone/server.js' > bundle/Procfile
+          cat > bundle/package.json <<'JSON'
+          { "name": "ram-runtime", "private": true, "scripts": { "start": "node .next/standalone/server.js" } }
+          JSON
+          (cd bundle && zip -r ../artifact.zip .)
+
+      
+      - name: Upload artifact → S3
+        id: s3
+        run: |
+          set -euo pipefail
+          KEY="ram/${GITHUB_SHA}.zip"
+          aws s3 cp artifact.zip "s3://${{ steps.bucket.outputs.s3 }}/${KEY}"
+          echo "key=$KEY" >> $GITHUB_OUTPUT
+
+      - name: Create EB App Version
+        run: |
+          aws elasticbeanstalk create-application-version \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --version-label "${{ github.sha }}" \
+            --source-bundle S3Bucket="${{ steps.bucket.outputs.s3 }}",S3Key="${{ steps.s3.outputs.key }}"
+
+      - name: Resolve Node.js (Amazon Linux 2023) Solution Stack
+        id: platform
+        run: |
+          set -euo pipefail
+          # Prefer AL2023 Node.js solution stacks; fallback to any Node.js
+          STACK=$(aws elasticbeanstalk list-available-solution-stacks \
+            --query 'reverse(SolutionStacks[?contains(@, `Amazon Linux 2023`) && contains(@, `running Node.js`)])[:1]' \
+            --output text)
+          if [ -z "$STACK" ] || [ "$STACK" = "None" ]; then
+            STACK=$(aws elasticbeanstalk list-available-solution-stacks \
+              --query 'reverse(SolutionStacks[?contains(@, `running Node.js`)])[:1]' \
+              --output text)
+          fi
+          echo "stack=$STACK" >> $GITHUB_OUTPUT
+
+      - name: Resolve EB environment CNAME
+        id: ebcname
+        run: |
+          set -euo pipefail
+          CNAME=$(aws elasticbeanstalk describe-environments \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --environment-names "${{ env.EB_ENV_NAME }}" \
+            --query 'Environments[0].CNAME' --output text || true)
+          echo "cname=$CNAME" >> $GITHUB_OUTPUT
+
+      - name: Deploy to EB (update or create)
+        run: |
+          set -euo pipefail
+          EXISTS=$(aws elasticbeanstalk describe-environments \
+            --application-name "${{ env.EB_APP_NAME }}" \
+            --environment-names "${{ env.EB_ENV_NAME }}" \
+            --query 'Environments[0].EnvironmentName' --output text || true)
+          if [ "$EXISTS" = "None" ] || [ -z "$EXISTS" ]; then
+            echo "Creating environment ${{ env.EB_ENV_NAME }}"
+            aws elasticbeanstalk create-environment \
+              --application-name "${{ env.EB_APP_NAME }}" \
+              --environment-name "${{ env.EB_ENV_NAME }}" \
+              --solution-stack-name "${{ steps.platform.outputs.stack }}" \
+              --option-settings \
+                Namespace=aws:elasticbeanstalk:environment,OptionName=ServiceRole,Value=aws-elasticbeanstalk-service-role \
+                Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=aws-elasticbeanstalk-ec2-role \
+              --version-label "${{ github.sha }}"
+          else
+            echo "Updating environment $EXISTS"
+            set +e
+            OUT=$(aws elasticbeanstalk update-environment \
+              --environment-name "${{ env.EB_ENV_NAME }}" \
+              --version-label "${{ github.sha }}" 2>&1)
+            RC=$?
+            set -e
+            if [ $RC -ne 0 ]; then
+              echo "$OUT"
+              if echo "$OUT" | grep -q "No Environment found"; then
+                echo "Falling back to create-environment for ${{ env.EB_ENV_NAME }}"
+                aws elasticbeanstalk create-environment \
+                  --application-name "${{ env.EB_APP_NAME }}" \
+                  --environment-name "${{ env.EB_ENV_NAME }}" \
+                  --solution-stack-name "${{ steps.platform.outputs.stack }}" \
+                  --option-settings \
+                    Namespace=aws:elasticbeanstalk:environment,OptionName=ServiceRole,Value=aws-elasticbeanstalk-service-role \
+                    Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=aws-elasticbeanstalk-ec2-role \
+                  --version-label "${{ github.sha }}"
+              else
+                exit $RC
+              fi
+            fi
+          fi
+
+      - name: Wait for EB to be Ready
+        run: |
+          # For new envs or updates, poll until Ready/Green up to ~20m
+          for i in $(seq 1 120); do
+            STATUS=$(aws elasticbeanstalk describe-environments \
+              --application-name "${{ env.EB_APP_NAME }}" \
+              --environment-names "${{ env.EB_ENV_NAME }}" \
+              --query 'Environments[0].Status' --output text || true)
+            HEALTH=$(aws elasticbeanstalk describe-environments \
+              --application-name "${{ env.EB_APP_NAME }}" \
+              --environment-names "${{ env.EB_ENV_NAME }}" \
+              --query 'Environments[0].Health' --output text || true)
+            echo "Attempt $i: Status=$STATUS Health=$HEALTH"
+            if [ "$STATUS" = "Ready" ] && [ "$HEALTH" = "Green" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Environment did not become Ready/Green in time" >&2
+          exit 1
+
+      - name: Stamp build metadata in EB env
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ env.EB_ENV_NAME }}" \
+            --option-settings \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=GIT_SHA,Value="${GITHUB_SHA}" \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEPLOYED_AT,Value="$(date -u +%FT%TZ)"
+
+      - name: Puppeteer smoke test against LIVE
+        run: |
+          npm i --no-audit --no-fund puppeteer@23
+          node scripts/smoke.puppeteer.mjs
+        env:
+          APP_URL: https://reviewsandmarketing.com
+          FALLBACK_URL: ${{ steps.ebcname.outputs.cname }}
+
+      - name: Roll back on failure
+        if: failure() && steps.prev.outputs.PREV != '' && steps.prev.outputs.PREV != 'None'
+        run: |
+          echo "Rolling back to ${{ steps.prev.outputs.PREV }}"
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ env.EB_ENV_NAME }}" \
+            --version-label "${{ steps.prev.outputs.PREV }}"
+          aws elasticbeanstalk wait environment-updated \
+            --environment-names "${{ env.EB_ENV_NAME }}"
+
+

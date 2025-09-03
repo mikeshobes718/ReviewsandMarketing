@@ -1,0 +1,29 @@
+name: Daily Digest (call app API)
+
+on:
+  schedule:
+    - cron: "15 12 * * *"
+  workflow_dispatch: {}
+
+env:
+  APP_URL: https://reviewsandmarketing.com
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call daily digest endpoint
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" -X POST \
+            -H "X-Cron-Token: $CRON_DIGEST_TOKEN" \
+            "$APP_URL/api/digest/daily")
+          echo "HTTP $code"
+          test "$code" = "200"
+          cat /tmp/out.txt
+        env:
+          CRON_DIGEST_TOKEN: ${{ secrets.CRON_DIGEST_TOKEN }}
+
+
+
+
