@@ -36,6 +36,8 @@ export default function ConnectBusiness() {
   const [error, setError] = useState<string | null>(null);
   const [useLocation, setUseLocation] = useState<boolean>(true);
   const [mapFailed, setMapFailed] = useState<boolean>(false);
+  const [isPro, setIsPro] = useState<boolean>(false);
+  const [saved, setSaved] = useState<boolean>(false);
 
   useEffect(() => {
     // Best-effort geolocation bias
@@ -99,6 +101,19 @@ export default function ConnectBusiness() {
     check();
     const id = setInterval(check, 5000);
     return () => clearInterval(id);
+  }, []);
+
+  // Fetch entitlement status to decide QR visibility for Starter
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/entitlements', { cache: 'no-store' });
+        if (r.ok) {
+          const j = await r.json();
+          setIsPro(Boolean(j?.pro));
+        }
+      } catch {}
+    })();
   }, []);
 
   useEffect(() => {
@@ -245,54 +260,48 @@ export default function ConnectBusiness() {
           />
           <select
             aria-label="Search region"
-            className="sm:w-48 rounded-xl border border-gray-200 px-3 py-3 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="sm:w-64 rounded-xl border border-gray-200 px-3 py-3 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={region}
-            onChange={(e)=>setRegion(e.target.value as typeof region)}
+            onChange={(e)=>setRegion(e.target.value)}
             title="Bias search to a country"
           >
             <option value="auto">All countries</option>
             <option value="US">United States</option>
-            <option value="CO">Colombia</option>
             <option value="CA">Canada</option>
             <option value="MX">Mexico</option>
-            <option value="GB">United Kingdom</option>
-            <option value="ES">Spain</option>
-            <option value="BR">Brazil</option>
-            <option value="DE">Germany</option>
-            <option value="FR">France</option>
-            <option value="IT">Italy</option>
-            <option value="IN">India</option>
-            <option value="JP">Japan</option>
-            <option value="AU">Australia</option>
-            <option value="NL">Netherlands</option>
-            <option value="SE">Sweden</option>
-          </select>
-          <select
-            aria-label="More regions"
-            className="sm:w-44 rounded-xl border border-gray-200 px-3 py-3 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            onChange={(e)=>{ const v = e.target.value; if (v) setRegion(v); e.currentTarget.selectedIndex = 0; }}
-          >
-            <option value="">More…</option>
             <option value="AR">Argentina</option>
+            <option value="BR">Brazil</option>
             <option value="CL">Chile</option>
             <option value="PE">Peru</option>
-            <option value="PT">Portugal</option>
+            <option value="CO">Colombia</option>
+            <option value="GB">United Kingdom</option>
             <option value="IE">Ireland</option>
-            <option value="NO">Norway</option>
+            <option value="ES">Spain</option>
+            <option value="PT">Portugal</option>
+            <option value="FR">France</option>
+            <option value="DE">Germany</option>
+            <option value="IT">Italy</option>
+            <option value="NL">Netherlands</option>
+            <option value="SE">Sweden</option>
             <option value="DK">Denmark</option>
+            <option value="NO">Norway</option>
             <option value="FI">Finland</option>
             <option value="CH">Switzerland</option>
             <option value="AT">Austria</option>
             <option value="BE">Belgium</option>
             <option value="PL">Poland</option>
             <option value="CZ">Czech Republic</option>
-            <option value="HK">Hong Kong</option>
+            <option value="AU">Australia</option>
+            <option value="NZ">New Zealand</option>
+            <option value="JP">Japan</option>
+            <option value="KR">South Korea</option>
             <option value="SG">Singapore</option>
-            <option value="PH">Philippines</option>
+            <option value="HK">Hong Kong</option>
             <option value="MY">Malaysia</option>
             <option value="TH">Thailand</option>
             <option value="VN">Vietnam</option>
-            <option value="KR">South Korea</option>
+            <option value="PH">Philippines</option>
+            <option value="IN">India</option>
             <option value="AE">United Arab Emirates</option>
             <option value="SA">Saudi Arabia</option>
             <option value="ZA">South Africa</option>
@@ -365,7 +374,7 @@ export default function ConnectBusiness() {
             </div>
           )}
 
-          {reviewUrl && (
+          {reviewUrl && (isPro || saved) && (
             <div className="space-y-3">
               <label className="text-sm font-medium text-gray-800">Step 2 — Your Google review link</label>
               <div className="flex gap-2">
@@ -393,6 +402,9 @@ export default function ConnectBusiness() {
                 </div>
               </div>
             </div>
+          )}
+          {!isPro && !saved && (
+            <div className="text-xs text-gray-500">QR will appear after you save (Pro sees it immediately).</div>
           )}
 
           <div className="flex items-center justify-between pt-1">
