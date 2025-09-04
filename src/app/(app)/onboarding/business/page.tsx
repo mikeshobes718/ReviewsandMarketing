@@ -40,6 +40,14 @@ export default function ConnectBusiness() {
   const [saved, setSaved] = useState<boolean>(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
+  // Restore last query on mount
+  useEffect(() => {
+    try {
+      const last = localStorage.getItem('onboarding:lastQuery') || '';
+      if (last) setInput(last);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     // Best-effort geolocation bias
     if (useLocation && navigator && 'geolocation' in navigator) {
@@ -251,7 +259,7 @@ export default function ConnectBusiness() {
             className="w-full rounded-xl border border-gray-200 px-4 py-3 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Step 1 — Search your business by name"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { setInput(e.target.value); try { localStorage.setItem('onboarding:lastQuery', e.target.value); } catch {} }}
             ref={searchRef}
             onKeyDown={(e) => {
               if (!suggestions.length) return;
@@ -261,56 +269,67 @@ export default function ConnectBusiness() {
               else if (e.key === 'Escape') { setSuggestions([]); setActiveIndex(-1); }
             }}
           />
-          <select
-            aria-label="Search region"
-            className="sm:w-64 rounded-xl border border-gray-200 px-3 py-3 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={region}
-            onChange={(e)=>setRegion(e.target.value)}
-            title="Bias search to a country"
-          >
-            <option value="auto">All countries</option>
-            <option value="US">United States</option>
-            <option value="CA">Canada</option>
-            <option value="MX">Mexico</option>
-            <option value="AR">Argentina</option>
-            <option value="BR">Brazil</option>
-            <option value="CL">Chile</option>
-            <option value="PE">Peru</option>
-            <option value="CO">Colombia</option>
-            <option value="GB">United Kingdom</option>
-            <option value="IE">Ireland</option>
-            <option value="ES">Spain</option>
-            <option value="PT">Portugal</option>
-            <option value="FR">France</option>
-            <option value="DE">Germany</option>
-            <option value="IT">Italy</option>
-            <option value="NL">Netherlands</option>
-            <option value="SE">Sweden</option>
-            <option value="DK">Denmark</option>
-            <option value="NO">Norway</option>
-            <option value="FI">Finland</option>
-            <option value="CH">Switzerland</option>
-            <option value="AT">Austria</option>
-            <option value="BE">Belgium</option>
-            <option value="PL">Poland</option>
-            <option value="CZ">Czech Republic</option>
-            <option value="AU">Australia</option>
-            <option value="NZ">New Zealand</option>
-            <option value="JP">Japan</option>
-            <option value="KR">South Korea</option>
-            <option value="SG">Singapore</option>
-            <option value="HK">Hong Kong</option>
-            <option value="MY">Malaysia</option>
-            <option value="TH">Thailand</option>
-            <option value="VN">Vietnam</option>
-            <option value="PH">Philippines</option>
-            <option value="IN">India</option>
-            <option value="AE">United Arab Emirates</option>
-            <option value="SA">Saudi Arabia</option>
-            <option value="ZA">South Africa</option>
-            <option value="NG">Nigeria</option>
-            <option value="KE">Kenya</option>
-          </select>
+          {(() => {
+            const countries: { code: string; name: string }[] = [
+              { code: 'US', name: 'United States' },
+              { code: 'CA', name: 'Canada' },
+              { code: 'MX', name: 'Mexico' },
+              { code: 'AR', name: 'Argentina' },
+              { code: 'BR', name: 'Brazil' },
+              { code: 'CL', name: 'Chile' },
+              { code: 'PE', name: 'Peru' },
+              { code: 'CO', name: 'Colombia' },
+              { code: 'GB', name: 'United Kingdom' },
+              { code: 'IE', name: 'Ireland' },
+              { code: 'ES', name: 'Spain' },
+              { code: 'PT', name: 'Portugal' },
+              { code: 'FR', name: 'France' },
+              { code: 'DE', name: 'Germany' },
+              { code: 'IT', name: 'Italy' },
+              { code: 'NL', name: 'Netherlands' },
+              { code: 'SE', name: 'Sweden' },
+              { code: 'DK', name: 'Denmark' },
+              { code: 'NO', name: 'Norway' },
+              { code: 'FI', name: 'Finland' },
+              { code: 'CH', name: 'Switzerland' },
+              { code: 'AT', name: 'Austria' },
+              { code: 'BE', name: 'Belgium' },
+              { code: 'PL', name: 'Poland' },
+              { code: 'CZ', name: 'Czech Republic' },
+              { code: 'AU', name: 'Australia' },
+              { code: 'NZ', name: 'New Zealand' },
+              { code: 'JP', name: 'Japan' },
+              { code: 'KR', name: 'South Korea' },
+              { code: 'SG', name: 'Singapore' },
+              { code: 'HK', name: 'Hong Kong' },
+              { code: 'MY', name: 'Malaysia' },
+              { code: 'TH', name: 'Thailand' },
+              { code: 'VN', name: 'Vietnam' },
+              { code: 'PH', name: 'Philippines' },
+              { code: 'IN', name: 'India' },
+              { code: 'AE', name: 'United Arab Emirates' },
+              { code: 'SA', name: 'Saudi Arabia' },
+              { code: 'ZA', name: 'South Africa' },
+              { code: 'NG', name: 'Nigeria' },
+              { code: 'KE', name: 'Kenya' },
+            ];
+            const others = countries.filter(c => c.code !== 'US').sort((a,b)=> a.name.localeCompare(b.name));
+            const ordered = [{ code: 'US', name: 'United States' }, ...others];
+            return (
+              <select
+                aria-label="Search region"
+                className="sm:w-64 rounded-xl border border-gray-200 px-3 py-3 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={region}
+                onChange={(e)=>setRegion(e.target.value)}
+                title="Bias search to a country"
+              >
+                <option value="auto">All countries</option>
+                {ordered.map(c => (
+                  <option key={c.code} value={c.code}>{c.name}</option>
+                ))}
+              </select>
+            );
+          })()}
           <label className="inline-flex items-center gap-2 text-sm text-gray-700 select-none">
             <input type="checkbox" checked={useLocation} onChange={(e)=>{ setUseLocation(e.target.checked); if (!e.target.checked) setCoords(null); else if (navigator?.geolocation) { try { navigator.geolocation.getCurrentPosition((pos)=>setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })); } catch {} } }} />
             Use my location
