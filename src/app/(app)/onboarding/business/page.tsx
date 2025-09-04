@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { clientAuth } from '@/lib/firebaseClient';
 
@@ -38,6 +38,7 @@ export default function ConnectBusiness() {
   const [mapFailed, setMapFailed] = useState<boolean>(false);
   const [isPro, setIsPro] = useState<boolean>(false);
   const [saved, setSaved] = useState<boolean>(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     // Best-effort geolocation bias
@@ -205,6 +206,7 @@ export default function ConnectBusiness() {
         }),
       });
       if (!r.ok) throw new Error(await r.text());
+      setSaved(true);
       setToast('Saved — opening your dashboard…');
       try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
       setTimeout(() => { window.location.href = '/dashboard'; }, 900);
@@ -250,6 +252,7 @@ export default function ConnectBusiness() {
             placeholder="Step 1 — Search your business by name"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            ref={searchRef}
             onKeyDown={(e) => {
               if (!suggestions.length) return;
               if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex((i)=> (i+1) % suggestions.length); }
@@ -408,7 +411,7 @@ export default function ConnectBusiness() {
           )}
 
           <div className="flex items-center justify-between pt-1">
-            <button className="text-gray-700 underline" onClick={()=>{ setSelected(null); setSuggestions([]); setInput(''); }}>Back to search</button>
+            <button className="text-gray-700 underline" onClick={()=>{ setSelected(null); setActiveIndex(-1); setMapFailed(false); setSessionToken(newSessionToken()); setTimeout(()=>searchRef.current?.focus(), 0); }}>Back to search</button>
             <button
               disabled={saving}
               className="rounded-xl px-5 py-3 bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition"

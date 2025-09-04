@@ -78,5 +78,9 @@ export async function POST(req: Request) {
       secondaryText: s.placePrediction!.structuredFormat?.secondaryText?.text ?? '',
     }));
 
-  return NextResponse.json({ items });
+  const res = NextResponse.json({ items });
+  if (!includedRegionCodes && headerCountry) {
+    res.headers.set('Set-Cookie', `region_hint=${headerCountry}; Path=/; Max-Age=1800; SameSite=Lax`);
+  }
+  return res;
 }
