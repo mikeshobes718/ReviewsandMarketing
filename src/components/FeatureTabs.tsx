@@ -86,7 +86,7 @@ function DemoLinks() {
         <div className="text-sm text-gray-500 mb-2">Share</div>
         <div className="flex gap-3">
           <span className="inline-flex items-center gap-2 rounded-lg px-3 py-2 bg-gray-50 text-gray-700 border border-gray-200">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M22 12h-6m0 0l3 3m-3-3l3-3M2 12h6m0 0l-3 3m3-3l-3-3"/></svg>
+            <svg aria-hidden className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M22 12h-6m0 0l3 3m-3-3l3-3M2 12h6m0 0l-3 3m3-3l-3-3"/></svg>
             SMS
           </span>
           <span className="inline-flex items-center gap-2 rounded-lg px-3 py-2 bg-gray-50 text-gray-700 border border-gray-200">Email</span>
@@ -155,5 +155,4 @@ function DemoAnalytics() {
 }
 
 export default FeatureTabs;
-
 

@@ -1,12 +1,18 @@
 import { getEnv } from './env';
 
-export async function placesAutocomplete(input: string, sessionToken: string, includedRegionCodes?: string[]) {
-  const { GOOGLE_MAPS_API_KEY } = getEnv();
-  const fields =
-    'suggestions.placePrediction.placeId,' +
-    'suggestions.placePrediction.structuredFormat.mainText.text,' +
-    'suggestions.placePrediction.structuredFormat.secondaryText.text';
-
+// Primary: Places API (New) v1
+async function v1Autocomplete(GOOGLE_MAPS_API_KEY: string, params: {
+  input: string;
+  sessionToken: string;
+  includedRegionCodes?: string[];
+  languageCode?: string;
+  locationBias?: { lat: number; lng: number; radiusMeters?: number };
+}) {
+  const fields = [
+    'suggestions.placePrediction.placeId',
+    'suggestions.placePrediction.structuredFormat.mainText.text',
+    'suggestions.placePrediction.structuredFormat.secondaryText.text',
+  ].join(',');
   const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
     method: 'POST',
     headers: {
@@ -15,23 +21,63 @@ export async function placesAutocomplete(input: string, sessionToken: string, in
       'X-Goog-FieldMask': fields,
     },
     body: JSON.stringify({
-      input,
-      sessionToken,
-      includedRegionCodes,
+      input: params.input,
+      sessionToken: params.sessionToken,
+      includedRegionCodes: params.includedRegionCodes,
+      languageCode: params.languageCode,
+      ...(params.locationBias
+        ? { locationBias: { circle: { center: { latitude: params.locationBias.lat, longitude: params.locationBias.lng }, radius: params.locationBias.radiusMeters || 50000 } } }
+        : {}),
     }),
   });
-  if (!res.ok) throw new Error(`Autocomplete error: ${res.status}`);
+  if (!res.ok) throw new Error(`v1_autocomplete_${res.status}`);
   return res.json();
 }
 
-export async function getPlaceDetails(placeId: string, sessionToken?: string) {
-  const { GOOGLE_MAPS_API_KEY } = getEnv();
+// Fallback: legacy Places API autocomplete (if v1 not enabled)
+async function legacyAutocomplete(GOOGLE_MAPS_API_KEY: string, params: {
+  input: string;
+  includedRegionCodes?: string[];
+  languageCode?: string;
+  locationBias?: { lat: number; lng: number; radiusMeters?: number };
+}) {
+  const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
+  url.searchParams.set('input', params.input);
+  url.searchParams.set('key', GOOGLE_MAPS_API_KEY);
+  if (params.languageCode) url.searchParams.set('language', params.languageCode);
+  if (params.includedRegionCodes && params.includedRegionCodes.length === 1) {
+    url.searchParams.set('components', `country:${params.includedRegionCodes[0]}`);
+  }
+  if (params.locationBias) {
+    url.searchParams.set('location', `${params.locationBias.lat},${params.locationBias.lng}`);
+    url.searchParams.set('radius', String(params.locationBias.radiusMeters || 50000));
+  }
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`legacy_autocomplete_${res.status}`);
+  const j = await res.json();
+  type LegacyPred = { place_id: string; description?: string; structured_formatting?: { main_text?: string; secondary_text?: string } };
+  return {
+    suggestions: (j.predictions || []).map((p: LegacyPred) => ({
+      placePrediction: {
+        placeId: p.place_id,
+        structuredFormat: {
+          mainText: { text: p.structured_formatting?.main_text || p.description || '' },
+          secondaryText: { text: p.structured_formatting?.secondary_text || '' },
+        },
+      },
+    })),
+  };
+}
+
+// Primary: Places API (New) v1
+async function v1Details(GOOGLE_MAPS_API_KEY: string, placeId: string, sessionToken?: string) {
   const mask = [
     'id',
     'displayName',
     'formattedAddress',
     'rating',
     'userRatingCount',
+    'location',
     'googleMapsUri',
     'googleMapsLinks.placeUri',
     'googleMapsLinks.writeAReviewUri',
@@ -45,8 +91,49 @@ export async function getPlaceDetails(placeId: string, sessionToken?: string) {
       ...(sessionToken ? { 'X-Goog-Session-Token': sessionToken } : {}),
     },
   });
-  if (!res.ok) throw new Error(`Details error: ${res.status}`);
+  if (!res.ok) throw new Error(`v1_details_${res.status}`);
   return res.json();
+}
+
+// Fallback: legacy Places API details
+async function legacyDetails(GOOGLE_MAPS_API_KEY: string, placeId: string) {
+  const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
+  url.searchParams.set('place_id', placeId);
+  url.searchParams.set('key', GOOGLE_MAPS_API_KEY);
+  url.searchParams.set('fields', 'place_id,name,formatted_address,rating,user_ratings_total,url,geometry/location');
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`legacy_details_${res.status}`);
+  const j = await res.json();
+  const r = j.result || {};
+  return {
+    id: r.place_id,
+    displayName: { text: r.name },
+    formattedAddress: r.formatted_address,
+    rating: r.rating,
+    userRatingCount: r.user_ratings_total,
+    googleMapsUri: r.url,
+    googleMapsLinks: {},
+    location: r.geometry?.location ? { latitude: r.geometry.location.lat, longitude: r.geometry.location.lng } : undefined,
+  };
+}
+
+export async function placesAutocomplete(input: string, sessionToken: string, includedRegionCodes?: string[], languageCode?: string, locationBias?: { lat: number; lng: number; radiusMeters?: number }) {
+  const { GOOGLE_MAPS_API_KEY } = getEnv();
+  try {
+    return await v1Autocomplete(GOOGLE_MAPS_API_KEY, { input, sessionToken, includedRegionCodes, languageCode, locationBias });
+  } catch {
+    // Graceful fallback if v1 is disabled or returns an error
+    return await legacyAutocomplete(GOOGLE_MAPS_API_KEY, { input, includedRegionCodes, languageCode, locationBias });
+  }
+}
+
+export async function getPlaceDetails(placeId: string, sessionToken?: string) {
+  const { GOOGLE_MAPS_API_KEY } = getEnv();
+  try {
+    return await v1Details(GOOGLE_MAPS_API_KEY, placeId, sessionToken);
+  } catch {
+    return await legacyDetails(GOOGLE_MAPS_API_KEY, placeId);
+  }
 }
 
 export function makeGoogleReviewLinkFromWriteUri(writeAReviewUri?: string, placeId?: string) {

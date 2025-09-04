@@ -1,22 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 export default function Pricing() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [annual, setAnnual] = useState(true);
+  const [billing, setBilling] = useState<'monthly' | 'yearly'>(() => {
+    if (typeof window === 'undefined') return 'monthly';
+    try { const v = localStorage.getItem('billingPreference'); if (v==='yearly' || v==='monthly') return v; } catch {}
+    return 'monthly';
+  });
+  const [welcome, setWelcome] = useState(false);
+  useEffect(() => {
+    try { setWelcome(new URL(window.location.href).searchParams.get('welcome') === '1'); } catch {}
+  }, []);
 
-  async function handleSubscribe() {
+  async function handleSubscribeWithPlan(plan: 'monthly' | 'yearly') {
     try {
       setError(null);
       setLoading(true);
-      // In a real flow you'll have an authenticated user with UID/email
+      // If signed in, server will derive uid/email from cookie; otherwise prompt email
+      const hasToken = (() => { try { return Boolean(localStorage.getItem('idToken')); } catch { return false; } })();
+      const payload: { plan: 'monthly'|'yearly'; uid?: string; email?: string } = { plan };
+      if (!hasToken) {
+        let email = '';
+        try { email = localStorage.getItem('userEmail') || ''; } catch {}
+        if (!email) {
+          const entered = window.prompt('Enter your email for the Stripe checkout:');
+          if (!entered) throw new Error('Email is required for checkout');
+          email = entered;
+        }
+        payload.uid = 'anon';
+        payload.email = email;
+      }
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: "anon", email: "customer@example.com" }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
       const j = await res.json();
@@ -29,15 +50,24 @@ export default function Pricing() {
     }
   }
 
-  const starterPrice = annual ? 24 : 29;
-  const proPrice = annual ? 63 : 79;
+  const starterPriceText = 'Free';
+  const proPrice = billing === 'monthly' ? 49.99 : 499.0;
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 mesh-bg">
+      {welcome && (
+        <div className="sticky top-16 z-40">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+            <div className="rounded-xl border border-blue-200 bg-blue-50 text-blue-800 px-4 py-3 text-sm">
+              Your email is verified — choose a plan to unlock your dashboard.
+            </div>
+          </div>
+        </div>
+      )}
       {/* Pricing Header */}
       <section className="relative overflow-hidden pt-20 pb-10">
         <div className="pointer-events-none absolute inset-0 -z-10 [mask-image:radial-gradient(60%_50%_at_50%_0%,black,transparent)] bg-gradient-to-b from-blue-100/60 via-transparent to-transparent" />
         <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
-          <span className="inline-flex items-center px-4 py-2 rounded-full bg-white/70 text-blue-800 text-sm font-medium mb-6 shadow ring-1 ring-blue-200">14‑day free trial</span>
+          <span className="inline-flex items-center px-4 py-2 rounded-full bg-white/70 text-blue-800 text-sm font-medium mb-6 shadow ring-1 ring-blue-200">Starter is free • Upgrade anytime</span>
           <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-4">
             Simple, transparent pricing
           </h1>
@@ -46,21 +76,24 @@ export default function Pricing() {
           </p>
           <div className="mt-8 inline-flex items-center gap-3 bg-white/80 border border-gray-200 rounded-full p-1 shadow-sm">
             <button
-              className={`${annual ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : "text-gray-700"} px-4 py-2 rounded-full text-sm font-medium transition`}
-              onClick={() => setAnnual(true)}
-              aria-pressed={annual}
-            >
-              Annual
-            </button>
-            <button
-              className={`${!annual ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : "text-gray-700"} px-4 py-2 rounded-full text-sm font-medium transition`}
-              onClick={() => setAnnual(false)}
-              aria-pressed={!annual}
+              className={`${billing === 'monthly' ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : "text-gray-700"} px-4 py-2 rounded-full text-sm font-medium transition`}
+              onClick={() => { setBilling('monthly'); try{ localStorage.setItem('billingPreference','monthly'); }catch{} }}
+              aria-pressed={billing === 'monthly'}
             >
               Monthly
             </button>
-            <span className="hidden sm:inline text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 ml-1">Save 20% annually</span>
+            <button
+              className={`${billing === 'yearly' ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : "text-gray-700"} px-4 py-2 rounded-full text-sm font-medium transition`}
+              onClick={() => { setBilling('yearly'); try{ localStorage.setItem('billingPreference','yearly'); }catch{} }}
+              aria-pressed={billing === 'yearly'}
+            >
+              Yearly
+            </button>
+            <span className="hidden sm:inline text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 ml-1">Save vs monthly</span>
           </div>
+          {billing === 'yearly' && (
+            <div className="mt-2 text-sm text-gray-600">≈ $41.58/mo when billed yearly</div>
+          )}
         </div>
       </section>
 
@@ -84,10 +117,9 @@ export default function Pricing() {
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Starter</h3>
                 <p className="text-gray-600 mb-6">Perfect for small businesses getting started</p>
                 <div className="mb-6">
-                  <span className="text-5xl font-bold text-gray-900">${starterPrice}</span>
-                  <span className="text-xl text-gray-600">/mo</span>
+                  <span className="text-5xl font-bold text-gray-900">{starterPriceText}</span>
                 </div>
-                <p className="text-sm text-gray-500">{annual ? "Billed annually" : "Billed monthly"} • Cancel anytime</p>
+                <p className="text-sm text-gray-500">Freemium plan • No credit card required</p>
               </div>
               
               <ul className="space-y-4 mb-8">
@@ -95,13 +127,13 @@ export default function Pricing() {
                   <svg className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  <span className="text-gray-700">Unlimited Google review links</span>
+                  <span className="text-gray-700">Up to 5 review requests/month</span>
                 </li>
                 <li className="flex items-start">
                   <svg className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  <span className="text-gray-700">Unlimited QR code generation</span>
+                  <span className="text-gray-700">One QR code (shared)</span>
                 </li>
                 <li className="flex items-start">
                   <svg className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -123,23 +155,12 @@ export default function Pricing() {
                 </li>
               </ul>
               
-              <button 
-                onClick={handleSubscribe} 
-                disabled={loading} 
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-3 px-6 rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-200 transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              <Link 
+                href="/onboarding/business" 
+                className="w-full inline-flex items-center justify-center bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-3 px-6 rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-200 transform hover:scale-105 shadow-lg"
               >
-                {loading ? (
-                  <div className="flex items-center justify-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing...
-                  </div>
-                ) : (
-                  "Start Free Trial"
-                )}
-              </button>
+                Get Started Free
+              </Link>
               
               {error && (
                 <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -161,9 +182,12 @@ export default function Pricing() {
                 <p className="text-gray-600 mb-6">For growing businesses that need more power</p>
                 <div className="mb-6">
                   <span className="text-5xl font-bold text-gray-900">${proPrice}</span>
-                  <span className="text-xl text-gray-600">/mo</span>
+                  <span className="text-xl text-gray-600">{billing === 'monthly' ? '/mo' : '/yr'}</span>
                 </div>
-                <p className="text-sm text-gray-500">{annual ? "Billed annually" : "Billed monthly"} • Cancel anytime</p>
+                <p className="text-sm text-gray-500">{billing === 'monthly' ? '$49.99 per month' : '$499 per year'} • Cancel anytime</p>
+                {billing === 'yearly' && (
+                  <p className="text-xs text-gray-400 mt-1">≈ $41.58/mo when billed yearly</p>
+                )}
               </div>
               
               <ul className="space-y-4 mb-8">
@@ -191,12 +215,7 @@ export default function Pricing() {
                   </svg>
                   <span className="text-gray-700">Priority support</span>
                 </li>
-                <li className="flex items-start">
-                  <svg className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-gray-700">API access</span>
-                </li>
+                
                 <li className="flex items-start">
                   <svg className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -206,11 +225,11 @@ export default function Pricing() {
             </ul>
               
               <button 
-                onClick={handleSubscribe} 
+                onClick={() => handleSubscribeWithPlan(billing)} 
                 disabled={loading}
                 className="w-full bg-gray-900 text-white font-semibold py-3 px-6 rounded-xl hover:bg-gray-800 transition-all duration-200 transform hover:scale-105 shadow-lg disabled:opacity-50"
               >
-                {loading ? "Processing..." : "Start Free Trial"}
+                {loading ? "Processing..." : billing === 'monthly' ? 'Upgrade to Pro (Monthly)' : 'Upgrade to Pro (Yearly)'}
             </button>
             </div>
 
@@ -280,7 +299,7 @@ export default function Pricing() {
               <div className="py-2 text-gray-700">Unlimited review links</div>
               <div className="py-2 text-center">✓</div>
               <div className="py-2 text-center">✓</div>
-              <div className="py-2 text-gray-700">QR code generation</div>
+              <div className="py-2 text-gray-700">One QR code (shared)</div>
               <div className="py-2 text-center">✓</div>
               <div className="py-2 text-center">✓</div>
               <div className="py-2 text-gray-700">Custom branding</div>
@@ -322,11 +341,10 @@ export default function Pricing() {
             
             <div className="bg-white rounded-2xl p-8 shadow-sm">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">
-                Is there a free trial?
+                Is there a free plan?
               </h3>
               <p className="text-gray-600 leading-relaxed">
-                Yes! We offer a 14-day free trial on all plans. No credit card required to start. 
-                You can explore all features and decide if Reviews & Marketing is right for your business.
+                Yes — our Starter plan is free and lets you connect your business, manage your main review link, and generate a QR code. Upgrade to Pro anytime for advanced features.
               </p>
         </div>
 
@@ -360,25 +378,24 @@ export default function Pricing() {
             Ready to start collecting more reviews?
           </h2>
           <p className="text-xl text-blue-100 mb-10 leading-relaxed">
-            Join hundreds of businesses already growing their reputation. 
-            Start your free trial today.
+            Join hundreds of businesses already growing their reputation. Get started free and upgrade anytime.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button 
-              onClick={handleSubscribe}
+              onClick={() => handleSubscribeWithPlan(billing)}
               disabled={loading}
               className="inline-flex items-center justify-center px-8 py-4 bg-white text-blue-600 font-semibold rounded-xl hover:bg-gray-100 transition-all duration-200 transform hover:scale-105 shadow-lg disabled:opacity-50"
             >
-              {loading ? "Processing..." : "Start Free Trial"}
+              {loading ? 'Processing...' : (billing === 'monthly' ? 'Upgrade to Pro (Monthly)' : 'Upgrade to Pro (Yearly)')}
             </button>
             <Link 
-              href="/dashboard" 
+              href="/onboarding/business" 
               className="inline-flex items-center justify-center px-8 py-4 border-2 border-white/30 text-white font-semibold rounded-xl hover:bg-white/10 transition-all duration-200"
             >
-              View Dashboard
+              Get Started Free
             </Link>
           </div>
-          <p className="text-blue-200 text-sm mt-6">No credit card required • 14-day free trial</p>
+          <p className="text-blue-200 text-sm mt-6">No credit card required • Starter is free</p>
       </div>
       </section>
     </main>

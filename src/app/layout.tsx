@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
+import ClientAuthSync from "../components/ClientAuthSync";
 import SiteFooter from "../components/SiteFooter";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -43,6 +44,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ? (
+          <script
+            src={`https://www.google.com/recaptcha/api.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
+            async
+            defer
+          />
+        ) : null}
+        <ClientAuthSync />
         <SiteHeader />
         {children}
         <SiteFooter />

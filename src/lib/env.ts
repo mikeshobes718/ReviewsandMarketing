@@ -6,6 +6,7 @@ const ServerEnvSchema = z.object({
   STRIPE_SECRET_KEY: z.string().min(1),
   STRIPE_PUBLISHABLE_KEY: z.string().min(1),
   STRIPE_PRICE_ID: z.string().min(1),
+  STRIPE_YEARLY_PRICE_ID: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
 
   POSTMARK_SERVER_TOKEN: z.string().min(1),

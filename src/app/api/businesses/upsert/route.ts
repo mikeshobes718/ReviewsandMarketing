@@ -1,32 +1,36 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAuthAdmin } from '@/lib/firebaseAdmin';
+import { requireUid } from '@/lib/authServer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  // Auth guard: expect Firebase ID token in Authorization: Bearer <token>
-  const authHeader = req.headers.get('authorization') || '';
-  const token = authHeader.toLowerCase().startsWith('bearer ')
-    ? authHeader.slice(7)
-    : undefined;
-  if (!token) return new NextResponse('Unauthorized', { status: 401 });
-
-  let uid: string;
+  // Prefer session cookie; fallback to Authorization: Bearer <idToken>
+  let uid: string | null = null;
   try {
-    const auth = getAuthAdmin();
-    const decoded = await auth.verifyIdToken(token);
-    uid = decoded.uid;
+    uid = await requireUid();
   } catch {
-    return new NextResponse('Unauthorized', { status: 401 });
+    const authHeader = req.headers.get('authorization') || '';
+    const token = authHeader.toLowerCase().startsWith('bearer ')
+      ? authHeader.slice(7)
+      : undefined;
+    if (!token) return new NextResponse('Unauthorized', { status: 401 });
+    try {
+      const auth = getAuthAdmin();
+      const decoded = await auth.verifyIdToken(token);
+      uid = decoded.uid;
+    } catch {
+      return new NextResponse('Unauthorized', { status: 401 });
+    }
   }
 
   const body = await req.json();
 
   const supabaseAdmin = getSupabaseAdmin();
   const { error } = await supabaseAdmin.from('businesses').upsert({
-    owner_uid: uid,
+    owner_uid: uid!,
     name: body.name,
     google_place_id: body.google_place_id,
     google_maps_place_uri: body.google_maps_place_uri,
@@ -39,5 +43,4 @@ export async function POST(req: Request) {
   if (error) return new NextResponse(error.message, { status: 500 });
   return NextResponse.json({ ok: true });
 }
-
 

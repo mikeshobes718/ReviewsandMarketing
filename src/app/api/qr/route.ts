@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import QRCode from 'qrcode';
+import { requireUid } from '@/lib/authServer';
+import { hasActivePro } from '@/lib/entitlements';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,6 +16,20 @@ export async function GET(req: Request) {
 
   if (!data) return new NextResponse('Missing data', { status: 400 });
 
+  // Starter plan restriction: QR only for the user's saved review link(s)
+  const uid = await requireUid().catch(() => null);
+  if (uid) {
+    const pro = await hasActivePro(uid);
+    if (!pro) {
+      const supa = getSupabaseAdmin();
+      const { data: biz } = await supa.from('businesses').select('review_link').eq('owner_uid', uid);
+      const allowed = new Set(((biz || []) as { review_link: string | null }[]).map((b) => b.review_link).filter(Boolean) as string[]);
+      if (!allowed.has(data)) {
+        return new NextResponse('Starter plan allows QR only for your saved review link.', { status: 403 });
+      }
+    }
+  }
+
   if (format === 'svg') {
     const svg = await QRCode.toString(data, { type: 'svg', margin, scale });
     return new NextResponse(svg, { headers: { 'Content-Type': 'image/svg+xml' } });
@@ -22,5 +39,3 @@ export async function GET(req: Request) {
     return new NextResponse(uint8, { headers: { 'Content-Type': 'image/png' } });
   }
 }
-
-

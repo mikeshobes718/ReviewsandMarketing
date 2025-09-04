@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getPlaceDetails } from '@/lib/googlePlaces';
+import { getPlaceDetails, makeGoogleReviewLinkFromWriteUri } from '@/lib/googlePlaces';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,9 +16,11 @@ export async function GET(req: Request) {
     formattedAddress?: string;
     rating?: number;
     userRatingCount?: number;
+    location?: { latitude?: number; longitude?: number };
     googleMapsUri?: string;
     googleMapsLinks?: { writeAReviewUri?: string; reviewsUri?: string };
   };
+  const links = (p as unknown as { googleMapsLinks?: { writeAReviewUri?: string; reviewsUri?: string } }).googleMapsLinks || {};
   return NextResponse.json({
     id: p.id,
     displayName: p.displayName?.text,
@@ -26,9 +28,9 @@ export async function GET(req: Request) {
     rating: p.rating,
     userRatingCount: p.userRatingCount,
     googleMapsUri: p.googleMapsUri,
-    writeAReviewUri: p.googleMapsLinks?.writeAReviewUri,
-    reviewsUri: p.googleMapsLinks?.reviewsUri,
+    writeAReviewUri: makeGoogleReviewLinkFromWriteUri(links.writeAReviewUri, p.id),
+    reviewsUri: links.reviewsUri,
+    lat: p.location?.latitude,
+    lng: p.location?.longitude,
   });
 }
-
-
